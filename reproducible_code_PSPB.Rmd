@@ -1,0 +1,872 @@
+---
+title: "The (Non) Impact of the 2015 Paris Terrorist Attacks on Political Attitudes"
+author: "Bruno Castanho Silva"
+date: "December 11, 2017"
+output: pdf_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Summary
+
+This file contains code to reproduce part of the analyses in Castanho Silva, B. \textit{forthcoming}. ``The (Non) Impact of the 2015 Paris Terrorist Attacks on Political Attitudes''. \textit{Personality and Social Psychology Bulletin}. 
+
+This script produces the descriptives tables (Tables 1 and 5), and the Regression Discontinuity estimates (Table 4). It also prepares the datasets for analysis in R and in Mplus. The other models can be run with the Mplus .inp files found in LINK/
+
+## Data Preparation -- ESS
+
+First, the user must download the ESS7 integrated file, version 2.1, from <http://www.europeansocialsurvey.org/download.html?file=ESS7e02_1&y=2014>.
+
+```{r warning=F, message=F}
+library(foreign)
+data<-read.dta('ESS7e02.dta', convert.factors=F)
+```
+
+Recode days into before/after the attacks:
+
+```{r}
+## Interview month:
+data$inwmms.r<-as.character(data$inwmms)
+for(i in 1:9){
+  data$inwmms.r[data$inwmms == i]<-paste(0,i,sep='')
+}
+
+## interview day:
+data$inwdds.r<-as.character(data$inwdds)
+for(i in 1:9){
+  data$inwdds.r[data$inwdds == i]<-paste(0,i,sep='')
+}
+
+## Three interview days are 99. Set as NA:
+data$inwdds.r[data$inwdds == 99]<-NA
+
+data$date.r<-as.numeric(paste(data$inwyys,data$inwmms.r,data$inwdds.r,sep=''))
+```
+
+Define attack as 0 and define days before/after
+
+```{r message=F, warning=F}
+library(dplyr)
+data<-arrange(data, date.r)
+days<-levels(as.factor(data$date.r))
+d.r<-c(1:length(days))
+d.r<-d.r-which(days == '20150107') #### The attack day is 0
+
+data$date.r1<-as.factor(data$date.r)
+levels(data$date.r1)<-d.r
+data$date.r1<-as.numeric(as.character(data$date.r1))
+```
+
+Defining 30 days before and 30 after as treatment and control groups:
+
+```{r}
+data$t.30<-NA
+data$t.30[data$date.r1 > 0 & data$date.r1 < 31]<-1
+data$t.30[data$date.r1 < 0 & data$date.r1 > -31]<-0
+```
+
+Defining all interviews before as control and all after as treatment:
+
+```{r}
+data$t<-NA
+data$t[data$date.r1 > 0]<-1
+data$t[data$date.r1 < 0]<-0
+```
+
+# Recode DVs
+
+```{r}
+data$lr.r<-as.numeric(data$lrscale) # Left-right
+data$lr.r[data$lr.r>10]<-NA
+
+data$nat.r<-as.numeric(data$fclcntr) # Nationalism
+data$nat.r[data$nat.r>4]<-NA
+# Recode nationalism to fit directional expectations:
+data$nat.r<- 5 - data$nat.r
+
+data$econ.r<-as.numeric(data$gincdif) # Economic L/R
+data$econ.r[data$econ.r>5]<-NA
+data$gay.r<-as.numeric(data$freehms) # Cultural L/R
+data$gay.r[data$gay.r>5]<-NA
+```
+
+```{r}
+data$imm.r<-as.numeric(data$imwbcnt) ## opposition to immigration;
+data$imm.r[data$imm.r>10]<-NA
+# recode imm.r to fit directional expectations:
+data$imm.r<- 11 - data$imm.r
+
+## Realistic threat:
+# generally bad (0) or good (10) for the economy when people from other countries 
+# come to live here: imbgeco
+data$imm.econ.r<-as.numeric(data$imbgeco)
+data$imm.econ.r[data$imm.econ.r>10]<-NA
+# recode imm.econ.r to fit directional expecations:
+data$imm.econ.r<- 11 - data$imm.econ.r
+# people who come to live here take away jobs (0) or help crete new jobs (10)
+data$imm.job.r<-as.numeric(data$imtcjob)
+data$imm.job.r[data$imm.job.r>10]<-NA
+data$imm.job.r<-11-data$imm.job.r # reverse to fit directional expectations
+# Immigrants take in taxes more than they pay (0) or put in more (10):
+data$imm.tax.r<-as.numeric(data$imbleco)
+data$imm.tax.r[data$imm.tax.r>10]<-NA
+data$imm.tax.r<-11-data$imm.tax.r # reverse to fit directional expectation;
+# Country crime problems are made worse (0) or better (10) by
+# immigrants moving in
+data$imm.crm.r<-as.numeric(data$imwbcrm)
+data$imm.crm.r[data$imm.crm.r > 10]<-NA
+data$imm.crm.r<-11-data$imm.crm.r # Recode for directional expectations
+
+## Symbolic threat:
+# Country cultural life is undermined (0) or enriched (10) by
+# people coming to live here
+data$imm.cul.r<-as.numeric(data$imueclt)
+data$imm.cul.r[data$imm.cul.r>10]<-NA
+data$imm.cul.r<-11-data$imm.cul.r # Recode for directional expectations
+# Religious beliefs and practices in country are undermined (0) or
+# enriched (10) by people coming to live here
+data$imm.rel.r<-as.numeric(data$rlgueim)
+data$imm.rel.r[data$imm.rel.r > 10]<-NA
+data$imm.rel.r<-11-data$imm.rel.r # recode for directional expectations
+
+## Refugee policy:
+data$refugees.r<-as.numeric(data$gvrfgap)
+data$refugees.r[data$refugees.r>5]<-NA
+
+# anti-Muslim:
+data$musl.r<-as.numeric(data$almuslv)
+data$musl.r[data$musl.r>4]<-NA
+
+# How many people from different ethnic group should be allowed
+# to come to the country? 1 = many, 4 = none; imdfetn
+data$imm.eth.r<-as.numeric(data$imdfetn)
+data$imm.eth.r[data$imm.eth.r>4]<-NA
+
+# Social distance: (married a close relative or be your boss 
+# (0 = not mind) 10=mind a lot)
+data$married.r<-as.numeric(data$imdetmr)
+data$married.r[data$married.r>10]<-NA
+data$boss.r<-as.numeric(data$imdetbs)
+data$boss.r[data$boss.r > 10]<-NA
+```
+
+
+Recode controls:
+
+```{r}
+data$born.r<-as.numeric(data$brncntr)
+data$born.r[data$brncntr.r > 2]<-NA
+data$ethnic.r<-as.numeric(data$blgetmg)
+data$ethnic.r[data$ethnic.r > 2]<-NA
+data$area.r<-as.numeric(data$acetalv)
+data$area.r[data$area.r > 3]<-NA
+data$contact.r<-as.numeric(data$dfegcon)
+data$contact.r[data$contact.r > 7]<-NA
+data$female.r<-as.numeric(data$gndr)
+data$female.r[data$female.r > 2]<-NA
+data$female.r<-as.numeric(data$gndr)
+data$female.r[data$female.r > 2]<-NA
+data$age.r<-as.numeric(data$agea)
+data$age.r[data$age.r == 999]<-NA
+data$sqrt.age.r<-sqrt(data$age.r)
+data$educ.r<-as.numeric(data$eisced)
+data$educ.r[data$educ.r > 8]<-NA
+```
+
+
+## Descriptives:
+
+```{r message=F, warning=F}
+library(Hmisc) ## to get statistics with sampling weights
+
+france.30<-subset(data, cntry == 'FR' & !is.na(t.30))
+vars<-c('nat.r','econ.r','gay.r','imm.r','imm.econ.r',
+        'imm.job.r','imm.tax.r','imm.crm.r',
+        'imm.cul.r','imm.rel.r','refugees.r','musl.r','married.r','boss.r',
+            'imm.eth.r','lr.r','born.r','ethnic.r','area.r',
+        'contact.r','female.r','age.r','educ.r')
+
+
+# Nr of treated cases in the Mplus models (removing all x-variables
+# with NA's):
+sum(france.30$t.30[!is.na(france.30$lr.r) & !is.na(france.30$born.r) &
+                     !is.na(france.30$ethnic.r) & !is.na(france.30$area.r) &
+                     !is.na(france.30$contact.r) & !is.na(france.30$female.r) &
+                     !is.na(france.30$age.r)])
+```
+
+Descriptives and t-tests for France:
+```{r}
+means<-matrix(NA,nrow=length(vars),ncol=4)
+sds<-matrix(NA,nrow=length(vars),ncol=4)
+
+for(i in 1:length(vars)){
+  tr<-subset(france.30,t.30 == 1)
+  ct<-subset(france.30,t.30 == 0)
+  a<-wtd.mean(tr[,vars[[i]]],tr$pspwght)
+  b<-sqrt(wtd.var(tr[,vars[[i]]],tr$pspwght))
+  d<-wtd.mean(ct[,vars[[i]]],ct$pspwght)
+  e<-sqrt(wtd.var(ct[,vars[[i]]],ct$pspwght))
+  means[i,1:2]<-cbind(a,d)
+  sds[i,1:2]<-cbind(b,e)
+}
+
+## T-tests for controls:
+
+tstat<-matrix(NA,nrow=8,ncol=2)
+
+for(i in 16:23){
+  tstat[i-15,1]<-t.test(france.30[france.30$t==0,vars[i]],
+                        france.30[france.30$t==1,vars[i]])$statistic
+}
+
+tstat
+```
+
+Countries where interviews end before 07 Jan. (or only up to two weeks after): Estonia (Dec 29), Israel (starts on Sep 12, 2015), Lithuania (starts in April 11, 2015), Netherlands (ends in Jan. 15), Norway (ends in Jan. 08), Poland (starts in April 17, 2015), Portugal (starts in Feb 02, 2015), Spain (starts in Jan 22, 2015). Codes: EE, IL, LT, NL, NO, PL, PT, ES
+
+Remove France and the countries w/ interviews that don't overlap w/ the attack:
+
+```{r}
+data1<-data[!(data$cntry %in%
+                c('EE','IL','LT','NL','NO','PL','PT','ES','FR')),]
+data1<-subset(data1, date.r1 != 0)
+```
+
+Descriptives for the ESS sample:
+
+```{r}
+data1.30<-subset(data1, !is.na(data1$t.30))
+
+for(i in 1:length(vars)){
+  tr<-subset(data1.30,t.30 == 1)
+  ct<-subset(data1.30,t.30 == 0)
+  a<-wtd.mean(tr[,vars[[i]]],tr$pspwght)
+  b<-sqrt(wtd.var(tr[,vars[[i]]],tr$pspwght))
+  d<-wtd.mean(ct[,vars[[i]]],ct$pspwght)
+  e<-sqrt(wtd.var(ct[,vars[[i]]],ct$pspwght))
+  means[i,3:4]<-cbind(a,d)
+  sds[i,3:4]<-cbind(b,e)
+}
+
+rownames(means)<-vars
+
+for(i in 16:23){
+  tstat[i-15,2]<-t.test(data1.30[data1.30$t==0,vars[i]],
+                        data1.30[data1.30$t==1,vars[i]])$p.value
+}
+
+tstat
+```
+
+Table 1
+
+```{r}
+## Function to merge dataframes alternating rows
+alternate.rows <- function(m1, m2) {
+  rbind(m1, m2)[order(c(seq(nrow(m1)), seq(nrow(m2)))),]
+}
+table.desc<-alternate.rows(means,sds)
+
+write.csv(table.desc,'Table_descs.csv')
+```
+
+Prepare the additive indexes for RDD:
+
+```{r}
+# Prepare the additive indexes for RDD:
+data$rthr<-rowMeans(data[,colnames(data) %in% c('imm.econ.r',
+                    'imm.job.r','imm.tax.r','imm.crm.r')],na.rm=T)
+
+data$sthr<-rowMeans(data[,colnames(data) %in% c('imm.cul.r',
+                                                'imm.rel.r')],na.rm=T)
+
+data$sdi<-rowMeans(data[,colnames(data) %in% c('boss.r', 'married.r')],na.rm=T)
+```
+
+## Prepare and save data for Mplus
+
+Mplus cannot handle column names in the data file, and only takes numeric values. Missing data is indicated with -999.
+
+```{r}
+france<-subset(data,cntry == 'FR' & date.r1 != 0)
+france.mplus<-france[,c(paste(vars),'t','t.30','date.r','pspwght','cntry')]
+france.mplus$age.sqrt<-sqrt(france.mplus$age.r)
+france.mplus$cntry<-1
+
+france.mplus[is.na(france.mplus)]<--999
+
+write.table(france.mplus,'data_france_mplus_rr.csv',row.names=F, col.names=F)
+
+ess.mplus<-data1[,c(paste(vars),'t','t.30','date.r','pspwght','cntry')]
+ess.mplus$age.sqrt<-sqrt(ess.mplus$age.r)
+ess.mplus$cntry<-as.numeric(as.factor(as.character(ess.mplus$cntry)))
+
+ess.mplus[is.na(ess.mplus)]<--999
+
+write.csv(ess.mplus,'data_ess_ten_mplus_rr.csv',row.names=F, col.names=F)
+```
+
+## Regression Discontinuity
+
+# LATE
+
+LATE in France:
+
+```{r warning=F, message=F}
+library(rdd)
+france<-subset(data,cntry == 'FR' & date.r1 != 0)
+
+## Realistic threat:
+rdd.fr.1<-RDestimate(rthr~date.r1 | sqrt.age.r+educ.r+female.r+contact.r+area.r+ethnic.r+
+                       born.r+lr.r,data=france,cutpoint = 0)
+## Symbolic threat
+rdd.fr.2<-RDestimate(sthr~date.r1| sqrt.age.r+educ.r+female.r+contact.r+area.r+ethnic.r+
+                       born.r+lr.r,data=france,cutpoint = 0)
+## Social distance:
+rdd.fr.3<-RDestimate(sdi~date.r1 | sqrt.age.r+educ.r+female.r+contact.r+area.r+ethnic.r+
+                       born.r+lr.r,data=france,cutpoint = 0)
+## Gay rights:
+rdd.fr.4<-RDestimate(gay.r~date.r1| sqrt.age.r+educ.r+female.r+contact.r+area.r+ethnic.r+
+                       born.r+lr.r,data=france,cutpoint = 0)
+## Redistribution
+rdd.fr.5<-RDestimate(econ.r~date.r1| sqrt.age.r+educ.r+female.r+contact.r+area.r+ethnic.r+
+                       born.r+lr.r,data=france,cutpoint = 0)
+## Nationalism:
+rdd.fr.6<-RDestimate(nat.r~date.r1| sqrt.age.r+educ.r+female.r+contact.r+area.r+ethnic.r+
+                       born.r+lr.r,data=france,cutpoint = 0)
+## Immigrants make country better or worse:
+rdd.fr.7<-RDestimate(imm.r~date.r1| sqrt.age.r+educ.r+female.r+contact.r+area.r+ethnic.r+
+                       born.r+lr.r,data=france,cutpoint = 0)
+## Government should be rigorous in allowing refugees:
+rdd.fr.8<-RDestimate(refugees.r~date.r1 | sqrt.age.r+educ.r+female.r+contact.r+area.r+ethnic.r+
+                       born.r+lr.r,data=france,cutpoint = 0)
+## Allow muslims to live here (only 1 (allow many) - 4 (allow none) scale)
+rdd.fr.9<-RDestimate(musl.r~date.r1 | sqrt.age.r+educ.r+female.r+contact.r+area.r+ethnic.r+
+                       born.r+lr.r,data=france,cutpoint = 0)
+## Allow people from a different ethnic group:
+rdd.fr.10<-RDestimate(imm.eth.r~date.r1 | sqrt.age.r+educ.r+female.r+contact.r+area.r+ethnic.r+
+                        born.r+lr.r,data=france,cutpoint = 0)
+```
+
+Getting into a table
+
+```{r}
+table2<-matrix(NA,ncol=10,nrow=12)
+results.france.rdd<-list(rdd.fr.1,rdd.fr.2,rdd.fr.3,
+                         rdd.fr.4,rdd.fr.5,rdd.fr.6,
+                         rdd.fr.7,rdd.fr.8,rdd.fr.9,rdd.fr.10)
+
+for(i in 1:10){
+  table2[1,i]<-results.france.rdd[[i]]$est[1]
+  table2[2,i]<-results.france.rdd[[i]]$se[1]
+  table2[4,i]<-results.france.rdd[[i]]$obs[1]
+  table2[5,i]<-results.france.rdd[[i]]$est[2]
+  table2[6,i]<-results.france.rdd[[i]]$se[2]
+  table2[8,i]<-results.france.rdd[[i]]$obs[2]
+  table2[9,i]<-results.france.rdd[[i]]$est[3]
+  table2[10,i]<-results.france.rdd[[i]]$se[3]
+  table2[12,i]<-results.france.rdd[[i]]$obs[3]
+}
+```
+
+Controlling for multiple testing:
+
+```{r}
+pvals<-matrix(NA,ncol=10,nrow=3)
+for(i in 1:10){
+  pvals[1,i]<-results.france.rdd[[i]]$p[1]
+  pvals[2,i]<-results.france.rdd[[i]]$p[2]
+  pvals[3,i]<-results.france.rdd[[i]]$p[3]
+}
+```
+
+LATE from France in Table 4:
+
+```{r}
+table2[3,]<-p.adjust(pvals[1,],method='BH')
+table2[7,]<-p.adjust(pvals[2,],method='BH')
+table2[11,]<-p.adjust(pvals[3,],method='BH')
+table2
+```
+
+LATE in other countries:
+
+```{r}
+all.ess<-data[!(data$cntry %in% c('EE','IL','LT','NL','NO','PL','PT','ES','FR')),]
+
+
+## Realistic threat:
+rdd.all.1<-RDestimate(rthr~date.r1 | sqrt.age.r+educ.r+female.r+contact.r+area.r+ethnic.r+
+                        born.r+lr.r,data=all.ess,cutpoint = 0)
+## Symbolic threat
+rdd.all.2<-RDestimate(sthr~date.r1| sqrt.age.r+educ.r+female.r+contact.r+area.r+ethnic.r+
+                        born.r+lr.r,data=all.ess,cutpoint = 0)
+## Social distance:
+rdd.all.3<-RDestimate(sdi~date.r1 | sqrt.age.r+educ.r+female.r+contact.r+area.r+ethnic.r+
+                        born.r+lr.r,data=all.ess,cutpoint = 0)
+## Gay rights:
+rdd.all.4<-RDestimate(gay.r~date.r1| sqrt.age.r+educ.r+female.r+contact.r+area.r+ethnic.r+
+                        born.r,data=all.ess,cutpoint = 0)
+## Redistribution
+rdd.all.5<-RDestimate(econ.r~date.r1| sqrt.age.r+educ.r+female.r+contact.r+area.r+ethnic.r+
+                        born.r+lr.r,data=all.ess,cutpoint = 0)
+## Nationalism:
+rdd.all.6<-RDestimate(nat.r~date.r1| sqrt.age.r+educ.r+female.r+contact.r+area.r+ethnic.r+
+                        born.r+lr.r,data=all.ess,cutpoint = 0)
+## Immigrants make country better or worse:
+rdd.all.7<-RDestimate(imm.r~date.r1| sqrt.age.r+educ.r+female.r+contact.r+area.r+ethnic.r+
+                        born.r+lr.r,data=all.ess,cutpoint = 0)
+## Government should be rigorous in allowing refugees:
+rdd.all.8<-RDestimate(refugees.r~date.r1 | sqrt.age.r+educ.r+female.r+contact.r+area.r+ethnic.r+
+                        born.r+lr.r,data=all.ess,cutpoint = 0)
+## Allow muslims to live here (only 1 (allow many) - 4 (allow none) scale)
+rdd.all.9<-RDestimate(musl.r~date.r1 | sqrt.age.r+educ.r+female.r+contact.r+area.r+ethnic.r+
+                        born.r+lr.r,data=all.ess,cutpoint = 0)
+## Allow people allom a different ethnic group:
+rdd.all.10<-RDestimate(imm.eth.r~date.r1 | sqrt.age.r+educ.r+female.r+contact.r+area.r+ethnic.r+
+                         born.r+lr.r,data=all.ess,cutpoint = 0)
+
+## Getting these to the table:
+table3<-matrix(NA,ncol=10,nrow=12)
+results.all.rdd<-list(rdd.all.1,rdd.all.2,rdd.all.3,
+                      rdd.all.4,rdd.all.5,rdd.all.6,
+                      rdd.all.7,rdd.all.8,rdd.all.9,rdd.all.10)
+
+for(i in 1:10){
+  table3[1,i]<-results.all.rdd[[i]]$est[1]
+  table3[2,i]<-results.all.rdd[[i]]$se[1]
+  table3[4,i]<-results.all.rdd[[i]]$obs[1]
+  table3[5,i]<-results.all.rdd[[i]]$est[2]
+  table3[6,i]<-results.all.rdd[[i]]$se[2]
+  table3[8,i]<-results.all.rdd[[i]]$obs[2]
+  table3[9,i]<-results.all.rdd[[i]]$est[3]
+  table3[10,i]<-results.all.rdd[[i]]$se[3]
+  table3[12,i]<-results.all.rdd[[i]]$obs[3]
+}
+
+### Controlling for multiple testing:
+
+pvals<-matrix(NA,ncol=10,nrow=3)
+for(i in 1:10){
+  pvals[1,i]<-results.all.rdd[[i]]$p[1]
+  pvals[2,i]<-results.all.rdd[[i]]$p[2]
+  pvals[3,i]<-results.all.rdd[[i]]$p[3]
+}
+
+table3[3,]<-p.adjust(pvals[1,],method='BH')
+table3[7,]<-p.adjust(pvals[2,],method='BH')
+table3[11,]<-p.adjust(pvals[3,],method='BH')
+```
+
+LATE in ESS results in Table 4:
+
+```{r}
+table3
+```
+
+
+## RDD Polarization Effects
+
+Recode the dependent variable:
+
+```{r}
+data$rthrp<-abs(data$rthr-5)
+data$sthrp<-abs(data$sthr-5)
+data$sdip<-abs(data$sdi-5)
+data$gayp<-abs(data$gay.r-3)
+data$econp<-abs(data$econ.r-3)
+data$natp<-abs(data$nat.r-2.5)+0.5
+data$refp<-abs(data$refugees.r-3)
+data$immp<-abs(data$imm.r-5)
+data$muslp<-abs(data$musl.r-2.5)+0.5
+data$immethp<-abs(data$imm.eth.r-2.5)+0.5
+```
+
+France:
+
+```{r}
+france<-subset(data,cntry == 'FR' & date.r1 != 0)
+
+## Realistic threat:
+rdd.fr.1<-RDestimate(rthrp~date.r1 | sqrt.age.r+educ.r+female.r+contact.r+area.r+ethnic.r+
+                       born.r+lr.r,data=france,cutpoint = 0)
+## Symbolic threat
+rdd.fr.2<-RDestimate(sthrp~date.r1| sqrt.age.r+educ.r+female.r+contact.r+area.r+ethnic.r+
+                       born.r+lr.r,data=france,cutpoint = 0)
+## Social distance:
+rdd.fr.3<-RDestimate(sdip~date.r1 | sqrt.age.r+educ.r+female.r+contact.r+area.r+ethnic.r+
+                       born.r+lr.r,data=france,cutpoint = 0)
+## Gay rights:
+rdd.fr.4<-RDestimate(gayp~date.r1| sqrt.age.r+educ.r+female.r+contact.r+area.r+ethnic.r+
+                       born.r+lr.r,data=france,cutpoint = 0)
+## Redistribution
+rdd.fr.5<-RDestimate(econp~date.r1| sqrt.age.r+educ.r+female.r+contact.r+area.r+ethnic.r+
+                       born.r+lr.r,data=france,cutpoint = 0)
+## Nationalism:
+rdd.fr.6<-RDestimate(natp~date.r1| sqrt.age.r+educ.r+female.r+contact.r+area.r+ethnic.r+
+                       born.r+lr.r,data=france,cutpoint = 0)
+## Immigrants make country better or worse:
+rdd.fr.7<-RDestimate(immp~date.r1| sqrt.age.r+educ.r+female.r+contact.r+area.r+ethnic.r+
+                       born.r+lr.r,data=france,cutpoint = 0)
+## Government should be rigorous in allowing refugees:
+rdd.fr.8<-RDestimate(refp~date.r1 | sqrt.age.r+educ.r+female.r+contact.r+area.r+ethnic.r+
+                       born.r+lr.r,data=france,cutpoint = 0)
+## Allow muslims to live here (only 1 (allow many) - 4 (allow none) scale)
+rdd.fr.9<-RDestimate(muslp~date.r1 | sqrt.age.r+educ.r+female.r+contact.r+area.r+ethnic.r+
+                       born.r+lr.r,data=france,cutpoint = 0)
+## Allow people from a different ethnic group:
+rdd.fr.10<-RDestimate(immethp~date.r1 | sqrt.age.r+educ.r+female.r+contact.r+area.r+ethnic.r+
+                        born.r+lr.r,data=france,cutpoint = 0)
+
+## Getting these to the table:
+table4<-matrix(NA,ncol=10,nrow=12)
+results.france.rdd<-list(rdd.fr.1,rdd.fr.2,rdd.fr.3,rdd.fr.4,
+                         rdd.fr.5,rdd.fr.6,rdd.fr.7,
+                         rdd.fr.8,rdd.fr.9,rdd.fr.10)
+
+for(i in 1:10){
+  table4[1,i]<-results.france.rdd[[i]]$est[1]
+  table4[2,i]<-results.france.rdd[[i]]$se[1]
+  table4[4,i]<-results.france.rdd[[i]]$obs[1]
+  table4[5,i]<-results.france.rdd[[i]]$est[2]
+  table4[6,i]<-results.france.rdd[[i]]$se[2]
+  table4[8,i]<-results.france.rdd[[i]]$obs[2]
+  table4[9,i]<-results.france.rdd[[i]]$est[3]
+  table4[10,i]<-results.france.rdd[[i]]$se[3]
+  table4[12,i]<-results.france.rdd[[i]]$obs[3]
+}
+
+### Controlling for multiple testing:
+
+pvals<-matrix(NA,ncol=10,nrow=3)
+for(i in 1:10){
+  pvals[1,i]<-results.france.rdd[[i]]$p[1]
+  pvals[2,i]<-results.france.rdd[[i]]$p[2]
+  pvals[3,i]<-results.france.rdd[[i]]$p[3]
+}
+
+table4[3,]<-p.adjust(pvals[1,],method='BH')
+table4[7,]<-p.adjust(pvals[2,],method='BH')
+table4[11,]<-p.adjust(pvals[3,],method='BH')
+```
+
+Polarization effects in France, Table 4:
+
+```{r}
+table4
+```
+
+Other countries:
+
+```{r}
+all.ess<-data[!(data$cntry %in% c('EE','IL','LT','NL','NO','PL','PT','ES','FR')),]
+
+## Realistic threat:
+rdd.all.1<-RDestimate(rthrp~date.r1 | sqrt.age.r+educ.r+female.r+contact.r+area.r+ethnic.r+
+                        born.r+lr.r,data=all.ess,cutpoint = 0)
+## Symbolic threat
+rdd.all.2<-RDestimate(sthrp~date.r1| sqrt.age.r+educ.r+female.r+contact.r+area.r+ethnic.r+
+                        born.r+lr.r,data=all.ess,cutpoint = 0)
+## Social distance:
+rdd.all.3<-RDestimate(sdip~date.r1 | sqrt.age.r+educ.r+female.r+contact.r+area.r+ethnic.r+
+                        born.r+lr.r,data=all.ess,cutpoint = 0)
+## Gay rights:
+rdd.all.4<-RDestimate(gayp~date.r1| sqrt.age.r+educ.r+female.r+contact.r+area.r+ethnic.r+
+                        born.r+lr.r,data=all.ess,cutpoint = 0)
+## Redistribution
+rdd.all.5<-RDestimate(econp~date.r1| sqrt.age.r+educ.r+female.r+contact.r+area.r+ethnic.r+
+                        born.r+lr.r,data=all.ess,cutpoint = 0)
+## Nationalism:
+rdd.all.6<-RDestimate(natp~date.r1| sqrt.age.r+educ.r+female.r+contact.r+area.r+ethnic.r+
+                        born.r+lr.r,data=all.ess,cutpoint = 0)
+## Immigrants make country better or worse:
+rdd.all.7<-RDestimate(immp~date.r1| sqrt.age.r+educ.r+female.r+contact.r+area.r+ethnic.r+
+                        born.r+lr.r,data=all.ess,cutpoint = 0)
+## Government should be rigorous in allowing refugees:
+rdd.all.8<-RDestimate(refp~date.r1 | sqrt.age.r+educ.r+female.r+contact.r+area.r+ethnic.r+
+                        born.r+lr.r,data=all.ess,cutpoint = 0)
+## Allow muslims to live here (only 1 (allow many) - 4 (allow none) scale)
+rdd.all.9<-RDestimate(muslp~date.r1 | sqrt.age.r+educ.r+female.r+contact.r+area.r+ethnic.r+
+                        born.r+lr.r,data=all.ess,cutpoint = 0)
+## Allow people from a different ethnic group:
+rdd.all.10<-RDestimate(immethp~date.r1 | sqrt.age.r+educ.r+female.r+contact.r+area.r+ethnic.r+
+                         born.r+lr.r,data=all.ess,cutpoint = 0)
+
+## Getting these to the table:
+table5<-matrix(NA,ncol=10,nrow=12)
+results.all.rdd<-list(rdd.all.1,rdd.all.2,rdd.all.3,
+                      rdd.all.4,rdd.all.5,rdd.all.6,rdd.all.7,
+                         rdd.all.8,rdd.all.9,rdd.all.10)
+
+for(i in 1:10){
+  table5[1,i]<-results.all.rdd[[i]]$est[1]
+  table5[2,i]<-results.all.rdd[[i]]$se[1]
+  table5[4,i]<-results.all.rdd[[i]]$obs[1]
+  table5[5,i]<-results.all.rdd[[i]]$est[2]
+  table5[6,i]<-results.all.rdd[[i]]$se[2]
+  table5[8,i]<-results.all.rdd[[i]]$obs[2]
+  table5[9,i]<-results.all.rdd[[i]]$est[3]
+  table5[10,i]<-results.all.rdd[[i]]$se[3]
+  table5[12,i]<-results.all.rdd[[i]]$obs[3]
+}
+
+### Controlling for multiple testing:
+
+pvals<-matrix(NA,ncol=10,nrow=3)
+for(i in 1:10){
+  pvals[1,i]<-results.all.rdd[[i]]$p[1]
+  pvals[2,i]<-results.all.rdd[[i]]$p[2]
+  pvals[3,i]<-results.all.rdd[[i]]$p[3]
+}
+
+table5[3,]<-p.adjust(pvals[1,],method='BH')
+table5[7,]<-p.adjust(pvals[2,],method='BH')
+table5[11,]<-p.adjust(pvals[3,],method='BH')
+```
+
+Polarization effects with RDD:
+
+```{r}
+table5
+```
+
+## Eurobarometer -- Prepare the data
+
+First, download the Eurobarometer 84.3 from its repository here: <https://dbk.gesis.org/dbksearch/sdesc2.asp?no=6643>.
+
+```{r warning=F, message=F}
+library(readstata13)
+eb<-read.dta13('ZA6643_v3-1-0.dta')
+```
+
+Fix date:
+
+```{r}
+# Friday 13 is number 7
+head(eb$p1)
+levels(eb$p1)
+
+eb$date.r<-as.numeric(eb$p1)
+
+# Treatment and control:
+eb$t<-NA
+eb$t[eb$date.r < 8]<-0
+eb$t[eb$date.r > 7]<-1
+
+## Remove people who took the survey between 8pm on
+# Nov 13 and 8am on Nov 14:
+eb<-eb[-which(eb$date.r == 7 & as.numeric(eb$p2) > 4),]
+eb<-eb[-which(eb$date.r == 8 & as.numeric(eb$p2) == 1),]
+```
+
+Recode DVs:
+
+```{r}
+eb$imm<-as.numeric(eb$qd11_3)
+eb$imm[eb$imm > 4]<-NA
+eb$ref<-as.numeric(eb$qd11_6)
+eb$ref[eb$ref > 4]<-NA
+eb$lr<-as.numeric(eb$d1)
+eb$lr[eb$lr > 10]<-NA
+eb$nat<-as.numeric(eb$qd1a_2)
+eb$nat[eb$nat > 4]<-NA
+eb$imm2<-as.numeric(eb$qb4_2)
+eb$imm2[eb$imm2 > 4]<-NA
+eb$imm3<-as.numeric(eb$qb5)
+eb$imm3[eb$imm3 > 4]<-NA
+eb$imm3[eb$imm3 < 4]<-1 ## 1 = yes, additional measures needed
+eb$imm3[eb$imm3 == 4]<-0
+eb$ter<-as.numeric(eb$qa3a_6)-1 # 1 = yes, mentioned terrorism
+```
+
+Recode controls:
+```{r}
+eb$unemp<-0
+eb$unemp[eb$d15a == 'Unemployed, temporarily not working']<-1
+eb$female<-as.numeric(eb$d10)
+eb$bills<-as.numeric(eb$d60)
+eb$bills[eb$bills > 3]<-NA
+eb$bills <- 4 - eb$bills ## so higher values mean hard time paying bills
+```
+
+Weights
+
+```{r}
+## get the weights right with germany and UK:
+eb$weights<-eb$w1
+eb$weights[eb$isocntry %in% c('DE-W','DE-E')]<-eb$w3[eb$isocntry %in% c('DE-W','DE-E')]
+eb$weights[eb$isocntry %in% c('GB-GBN','GB-NIR')]<-eb$w4[eb$isocntry %in% c('GB-GBN','GB-NIR')]
+
+## Fix the acronyms for Germany and UK:
+eb$cty.r<-eb$isocntry
+eb$cty.r[eb$isocntry %in% c('DE-W','DE-E')]<-'DE'
+eb$cty.r[eb$isocntry %in% c('GB-GBN','GB-NIR')]<-'UK'
+```
+
+## EB descriptives
+
+```{r}
+france.eb<-subset(eb, cty.r == 'FR' & !is.na(t))
+vars<-c('imm','ref','unemp','female','bills','d11','ter')
+
+means<-matrix(NA,nrow=length(vars),ncol=4)
+sds<-matrix(NA,nrow=length(vars),ncol=4)
+
+for(i in 1:length(vars)){
+  tr<-subset(france.eb,t == 1)
+  ct<-subset(france.eb,t == 0)
+  a<-wtd.mean(tr[,vars[[i]]],tr$weights)
+  b<-sqrt(wtd.var(tr[,vars[[i]]],tr$weights))
+  d<-wtd.mean(ct[,vars[[i]]],ct$weights)
+  e<-sqrt(wtd.var(ct[,vars[[i]]],ct$weights))
+  means[i,1:2]<-cbind(a,d)
+  sds[i,1:2]<-cbind(b,e)
+}
+
+## Differences in baseline characteristics:
+
+pvalues.eb<-matrix(NA,ncol=2,nrow=4)
+
+for(i in 3:6){
+  pvalues.eb[i-2,1]<-t.test(france.eb[france.eb$t ==
+                1,vars[i]],france.eb[france.eb$t ==
+                                       0,vars[i]])$p.value
+}
+
+pvalues.eb
+
+rm(france.eb)
+### Remove France, and countries which didn't ask one of the DVs: 
+
+### Codes: FR, CY-TCC, AL, ME, MK, RS, TR
+
+eb1<-eb[!(eb$cty.r %in% c('CY-TCC','AL', 'ME', 'MK', 'RS', 'TR','FR')),]
+
+## Left with 12 countries: AT, BE, CH, CZ, DE, DK, FI, GB, HU, IE, SE, SI
+
+for(i in 1:length(vars)){
+  tr<-subset(eb1,t == 1)
+  ct<-subset(eb1,t == 0)
+  a<-wtd.mean(tr[,vars[[i]]],tr$weights)
+  b<-sqrt(wtd.var(tr[,vars[[i]]],tr$weights))
+  d<-wtd.mean(ct[,vars[[i]]],ct$weights)
+  e<-sqrt(wtd.var(ct[,vars[[i]]],ct$weights))
+  means[i,3:4]<-cbind(a,d)
+  sds[i,3:4]<-cbind(b,e)
+}
+
+rownames(means)<-vars
+
+## Differences in baseline characteristics:
+
+  for(i in 3:6){
+    pvalues.eb[i-2,2]<-t.test(eb1[eb1$t == 1,vars[i]],eb1[eb1$t == 0,vars[i]])$p.value
+  }
+  
+  pvalues.eb
+
+## Function to merge dataframes alternating rows
+alternate.rows <- function(m1, m2) {
+  rbind(m1, m2)[order(c(seq(nrow(m1)), seq(nrow(m2)))),]
+}
+```
+
+Table of descriptives:
+
+```{r}
+table.desc.eb<-alternate.rows(means,sds)
+```
+
+## Save EB data for Mplus
+
+List of variables
+
+```{r}
+vars.eb<-c('imm','ref','lr','nat','imm2','imm3','ter',
+           'unemp','female','bills','d11','weights','cty.r')
+```
+
+French data:
+```{r}
+eb.france.mplus<-eb[which(eb$cty.r == 'FR'),
+                    c(paste(vars.eb),'t','date.r')]
+eb.france.mplus$cty.r<-1
+eb.france.mplus$d11<-sqrt(eb.france.mplus$d11)
+eb.france.mplus[is.na(eb.france.mplus)]<--999
+
+write.table(eb.france.mplus,'data_eb_france_mplus_Feb14.csv',row.names=F,
+            col.names=F)
+```
+
+Rest of countries:
+
+```{r}
+# Removing Turkish Cyprus because survey ended on Saturday 
+# 14, and no aggregated data, also removing France). 
+eb.all<-eb[!(eb$cty.r %in% c('FR','CY-TCC')),c(paste(vars.eb),'t','date.r')]
+```
+
+Level 2 predictors. All from World Development Indicators from
+(http://databank.worldbank.org/data/reports.aspx?source=2&series=SL.UEM.TOTL.ZS&country=#)
+
+```{r}
+## Unemployment total (% of the labor force)
+unemp2014<-c(8.5,6.5999999046,5,26.2999992371,24.7000007629,12.5,
+         11.6000003815,6.0999999046,6.9000000954,14.1999998093,
+         6.3000001907,5,8,8.6000003815,15.6000003815,6.1999998093,
+         7.8000001907,10,7.6999998093,11.3000001907,9.1999998093,9.5,
+         13.3000001907,11.6000003815,7,16.7000007629,9.1999998093,
+         27.8999996185,19.1000003815,22.2000007629,16.1000003815,
+         5.9000000954
+)
+
+### International Migrant Stock (% of the population), 2015:
+migrant<-c(12.2835331942,10.0989913533,14.8790512953,11.3423773739,
+           12.6902371918,9.6807677421,15.9169365667,43.9641339423,
+           11.6956827411,8.0895935894,13.2009782463,17.4657262505,
+           16.7675587504,5.7396832573,16.8340341543,3.8422256802,
+           4.5624652525,13.353240264,15.4163092221,4.7260896226,
+           1.6041808366,11.4129640933,3.2654178994,1.4281963924,
+           1.1631348032,13.6047139872,3.7690011025,6.2897741734,
+           13.1900776789,9.122622084,1.9890364103,9.8984880694
+)
+
+## % of labor force with primary education as highest level attained (2014):
+primeduc<-c(19.5,21.1000003815,13.1999998093,27.2999992371,
+            39.4000015259,33.5,16,16.2000007629,23,52.0999984741,
+            16.7000007629,14.6999998093,15.8000001907,13.1000003815,
+            18.3999996185,5,12.6999998093,9.3000001907,8.6000003815,
+            5.5,6.5999999046,11.8000001907,6.5,13.6999998093,
+            25.2000007629,11.8999996185,59.9000015259,24.6000003815,
+            19.5,43.9000015259,44.7999992371,45.2000007629
+)
+
+cts<-c('BE','DK','DE','GR','ES','IT','IE','LU','NL','PT','UK','AT',
+       'SE','FI','CY','CZ','HU','LV','EE','LT','PL','SI','SK','BG',
+       'RO','HR','TR','MK','ME','RS','AL','MT')
+```
+
+Add to the entire dataframe:
+
+```{r}
+data_l2<-data.frame(cbind(cts,primeduc,migrant,unemp2014))
+
+data_l2
+
+eb.all$primeduc<-NA
+eb.all$migrL2<-NA
+eb.all$unempL2<-NA
+for(i in 1:32){
+  eb.all$primeduc[eb.all$cty.r == data_l2[i,1]]<-data_l2[i,2]
+  eb.all$migrL2[eb.all$cty.r == data_l2[i,1]]<-data_l2[i,3]
+  eb.all$unempL2[eb.all$cty.r == data_l2[i,1]]<-data_l2[i,4]
+}
+eb.all$cty.r<-as.numeric(as.factor(as.character(eb.all$cty.r)))
+eb.all$d11<-sqrt(eb.all$d11)
+eb.all[is.na(eb.all)]<--999
+
+write.table(eb.all,'data_eb_all_mplus_Feb14.csv',row.names=F,col.names=F)
+```
