@@ -13,7 +13,7 @@ knitr::opts_chunk$set(echo = TRUE)
 
 This file contains code to reproduce part of the analyses in Castanho Silva, B. \textit{forthcoming}. ``The (Non) Impact of the 2015 Paris Terrorist Attacks on Political Attitudes''. \textit{Personality and Social Psychology Bulletin}. 
 
-This script produces the descriptives tables (Tables 1 and 5), and the Regression Discontinuity estimates (Table 4). It also prepares the datasets for analysis in R and in Mplus. The other models can be run with the Mplus .inp files found in LINK/
+This script produces the descriptives tables (Tables 1 and 5), and the Regression Discontinuity estimates (Table 4). It also prepares the datasets for analysis in R and in Mplus. The other models can be run with the Mplus .inp files found in <https://github.com/bcastanho/PSPB2017/blob/master/Mplus.zip>
 
 ## Data Preparation -- ESS
 
