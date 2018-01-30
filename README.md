@@ -1,5 +1,5 @@
 # PSPB2017
-This repository contains code to reproduce the analyses in Castanho Silva, Bruno. "The (Non) Impact of the 2015 Paris Terrorist Attacks on Political Attitudes". Personality and Social Psychology Bulletin.
+This repository contains code to reproduce the analyses in Castanho Silva, Bruno. 2018. "The (Non) Impact of the 2015 Paris Terrorist Attacks on Political Attitudes". Personality and Social Psychology Bulletin. OnlineFirst, https://doi.org/10.1177/0146167217752118.
 
 The necessary datasets have to be downloaded from their original repositories:
 
